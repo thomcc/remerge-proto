@@ -1,22 +1,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+// Clippy doesn't like serde's output...
+#![allow(clippy::type_repetition_in_bounds)]
+
 use super::desc::*;
 use super::error::*;
 use super::merge_kinds::*;
-use serde::{Deserialize, Serialize};
 use crate::util::is_default;
 use matches::matches;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use url::Url;
 
-
 pub const FORMAT_VERSION: usize = 1;
 
-
 pub fn parse_from_string(json: &str, is_remote: bool) -> Result<RecordSchema, SchemaError> {
-    let json_schema = match serde_json::from_str::<JsonSchema>(json) {
+    let json_schema = match serde_yaml::from_str::<JsonSchema>(json) {
         Ok(schema) => schema,
         Err(e) => {
             // If it's local then this is just a format error.
@@ -27,7 +28,7 @@ pub fn parse_from_string(json: &str, is_remote: bool) -> Result<RecordSchema, Sc
             }
             // If it's remote, then it failed, but it could have failed because
             // it's from a future version. Check that.
-            let version = match serde_json::from_str::<JustFormatVersion>(json) {
+            let version = match serde_yaml::from_str::<JustFormatVersion>(json) {
                 Ok(s) => s.format_version,
                 Err(_) => {
                     // Ditto with moving `e` (which we want to use because it can give
@@ -134,6 +135,7 @@ pub enum JsonFieldType {
     #[serde(rename = "untyped")]
     Untyped {
         #[serde(flatten)]
+        // XXX does using JsonValue here still work now that we use yaml?
         common: JsonFieldCommon<Option<JsonValue>>,
     },
 
@@ -1035,34 +1037,39 @@ impl TypeRestriction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, derive_more::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ParsedMerge {
     #[serde(rename = "take_newest")]
-    #[display(fmt = "take_newest")]
     TakeNewest,
     #[serde(rename = "prefer_remote")]
-    #[display(fmt = "prefer_remote")]
     PreferRemote,
     #[serde(rename = "duplicate")]
-    #[display(fmt = "duplicate")]
     Duplicate,
-
     #[serde(rename = "take_min")]
-    #[display(fmt = "take_min")]
     TakeMin,
     #[serde(rename = "take_max")]
-    #[display(fmt = "take_max")]
     TakeMax,
     #[serde(rename = "take_sum")]
-    #[display(fmt = "take_sum")]
     TakeSum,
-
     #[serde(rename = "prefer_false")]
-    #[display(fmt = "prefer_false")]
     PreferFalse,
     #[serde(rename = "prefer_true")]
-    #[display(fmt = "prefer_true")]
     PreferTrue,
+}
+
+impl std::fmt::Display for ParsedMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParsedMerge::TakeNewest => f.write_str("take_newest"),
+            ParsedMerge::PreferRemote => f.write_str("prefer_remote"),
+            ParsedMerge::Duplicate => f.write_str("duplicate"),
+            ParsedMerge::TakeMin => f.write_str("take_min"),
+            ParsedMerge::TakeMax => f.write_str("take_max"),
+            ParsedMerge::TakeSum => f.write_str("take_sum"),
+            ParsedMerge::PreferFalse => f.write_str("prefer_false"),
+            ParsedMerge::PreferTrue => f.write_str("prefer_true"),
+        }
+    }
 }
 
 impl ParsedMerge {

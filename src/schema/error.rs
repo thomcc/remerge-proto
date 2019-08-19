@@ -1,6 +1,10 @@
-use super::merge_kinds::*;
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use super::desc::*;
-use super::json::{ParsedMerge};
+use super::merge_kinds::*;
+use super::yaml::ParsedMerge;
 use failure::Fail;
 
 #[derive(Debug, Clone, Fail)]
@@ -76,18 +80,25 @@ pub enum FieldError {
     LazyCatchall(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, derive_more::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SemverProp {
-    #[display(fmt = "version")]
     Version,
-    #[display(fmt = "required_version")]
     RequiredVersion,
+}
+
+impl std::fmt::Display for SemverProp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SemverProp::Version => f.write_str("version"),
+            SemverProp::RequiredVersion => f.write_str("required_version"),
+        }
+    }
 }
 
 #[derive(Debug, Fail)]
 pub enum SchemaError {
     #[fail(display = "Schema format error: {}", _0)]
-    FormatError(#[fail(cause)] serde_json::Error),
+    FormatError(#[fail(cause)] serde_yaml::Error),
 
     #[fail(display = "Cannot parse format_version: {}", _0)]
     WrongFormatVersion(usize),
@@ -191,6 +202,5 @@ pub enum SchemaError {
     #[fail(display = "{}", _0)]
     LazyCatchall(String),
 }
-
 
 pub type SchemaResult<T> = std::result::Result<T, SchemaError>;

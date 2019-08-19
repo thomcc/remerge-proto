@@ -2,63 +2,89 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use derive_more::Display;
-// use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UntypedMerge {
-    #[display(fmt = "take_newest")]
     TakeNewest,
-
-    #[display(fmt = "prefer_remote")]
     PreferRemote,
-
-    #[display(fmt = "duplicate")]
     Duplicate,
-
-    // Not specified directly, instead determined automatically, so it formats
-    // in a way that's clear its not a real string.
-    #[display(fmt = "<composite member>")]
     CompositeMember,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Display)]
+impl std::fmt::Display for UntypedMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UntypedMerge::TakeNewest => f.write_str("take_newest"),
+            UntypedMerge::PreferRemote => f.write_str("prefer_remote"),
+            UntypedMerge::Duplicate => f.write_str("duplicate"),
+            UntypedMerge::CompositeMember => f.write_str("<composite member>"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TextMerge {
-    #[display(fmt = "{}", _0)]
     Untyped(UntypedMerge),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Display)]
+impl std::fmt::Display for TextMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TextMerge::Untyped(u) => write!(f, "{}", u),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TimestampMerge {
-    #[display(fmt = "{}", _0)]
     Untyped(UntypedMerge),
-    #[display(fmt = "take_min")]
     TakeMin,
-    #[display(fmt = "take_max")]
     TakeMax,
-    // Note: Cant be TakeSum
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Display)]
+impl std::fmt::Display for TimestampMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TimestampMerge::Untyped(u) => write!(f, "{}", u),
+            TimestampMerge::TakeMin => f.write_str("take_min"),
+            TimestampMerge::TakeMax => f.write_str("take_max"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NumberMerge {
-    #[display(fmt = "{}", _0)]
     Untyped(UntypedMerge),
-    #[display(fmt = "take_min")]
     TakeMin,
-    #[display(fmt = "take_max")]
     TakeMax,
-    #[display(fmt = "take_sum")]
     TakeSum,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Display)]
+impl std::fmt::Display for NumberMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NumberMerge::Untyped(u) => write!(f, "{}", u),
+            NumberMerge::TakeMin => f.write_str("take_min"),
+            NumberMerge::TakeMax => f.write_str("take_max"),
+            NumberMerge::TakeSum => f.write_str("take_sum"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BooleanMerge {
-    #[display(fmt = "{}", _0)]
     Untyped(UntypedMerge),
-    #[display(fmt = "prefer_false")]
     PreferFalse,
-    #[display(fmt = "prefer_true")]
     PreferTrue,
+}
+
+impl std::fmt::Display for BooleanMerge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BooleanMerge::Untyped(u) => write!(f, "{}", u),
+            BooleanMerge::PreferFalse => f.write_str("prefer_false"),
+            BooleanMerge::PreferTrue => f.write_str("prefer_true"),
+        }
+    }
 }
 
 // macro to remove boilerplate
@@ -178,7 +204,6 @@ macro_rules! merge_boilerplate {
         }
         merge_boilerplate!(@type [$MergeT] $($tt)*);
     }
-
 }
 
 merge_boilerplate!(

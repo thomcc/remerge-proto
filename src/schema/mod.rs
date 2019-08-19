@@ -3,11 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 pub mod desc;
-pub mod json;
-pub mod merge_kinds;
-pub mod error;
 
-pub use error::SchemaError;
+pub mod error;
+pub mod merge_kinds;
+pub mod yaml;
+
 pub use desc::*;
-pub use json::{parse_from_string};
+pub use error::SchemaError;
 pub use merge_kinds::*;
+pub use yaml::parse_from_string;

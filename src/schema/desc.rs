@@ -128,12 +128,19 @@ pub enum FieldType {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, derive_more::Display)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TimestampSemantic {
-    #[display(fmt = "created_at")]
     CreatedAt,
-    #[display(fmt = "updated_at")]
     UpdatedAt,
+}
+
+impl std::fmt::Display for TimestampSemantic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TimestampSemantic::CreatedAt => f.write_str("created_at"),
+            TimestampSemantic::UpdatedAt => f.write_str("updated_at"),
+        }
+    }
 }
 
 impl TimestampSemantic {
