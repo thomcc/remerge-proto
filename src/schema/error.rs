@@ -131,6 +131,17 @@ pub enum SchemaError {
     )]
     LocalRequiredVersionNotCompatible(semver::VersionReq, semver::Version),
 
+    #[fail(
+        display = "Remerge feature {} is required but not supported locally",
+        _0
+    )]
+    MissingRemergeFeature(String),
+    #[fail(
+        display = "Remerge feature {} is required but not listed in remerge_features_used",
+        _0
+    )]
+    UndeclaredFeatureRequired(String),
+
     #[fail(display = "Duplicate field: {}", _0)]
     DuplicateField(String),
 
@@ -166,11 +177,8 @@ pub enum SchemaError {
     #[fail(display = "Only one 'own_guid' field is allowd")]
     MultipleOwnGuid,
 
-    #[fail(display = "Remote schema missing 'remerge_version'")]
-    RemoteMissingWriterRemergeVersion,
-
-    #[fail(display = "Remote schema missing 'required_remerge_version'")]
-    RemoteMissingRequiredRemergeVersion,
+    #[fail(display = "Remote schema missing 'remerge_features_used'")]
+    RemoteMissingRemergeFeaturesUsed,
 
     #[fail(
         display = "'required_remerge_version' specified locally (as \"{}\"), but it's greater than our actual version \"{}\"",

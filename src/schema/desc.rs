@@ -8,6 +8,9 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use url::Url;
 
+/// The set of features understood by this client.
+pub const REMERGE_FEATURES_UNDERSTOOD: &[&str] = &["record_set", "untyped_map"];
+
 pub type JsonObject = serde_json::Map<String, JsonValue>;
 pub type FieldIndex = usize;
 
@@ -15,6 +18,8 @@ pub type FieldIndex = usize;
 pub struct RecordSchema {
     pub version: semver::Version,
     pub required_version: semver::VersionReq,
+
+    pub remerge_features_used: Vec<String>,
 
     pub legacy: bool,
     pub fields: Vec<Field>,
@@ -38,24 +43,12 @@ pub enum CompositeInfo {
     Root { children: Vec<FieldIndex> },
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum SchemaRemergeVersion {
-    /// Local versions typically don't specify required version, but they're allowed to.
-    /// (They can't specify writer version, we do that for them).
-    Local(Option<semver::VersionReq>),
-
-    /// Remote versions must specify both the version of the writer, and the
-    /// required version.
-    Remote {
-        write: semver::Version,
-        required: semver::VersionReq,
-    },
-}
-
 /// A single field in a record.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     pub name: String,
+    pub local_name: String,
+
     pub required: bool,
     pub deprecated: bool,
 

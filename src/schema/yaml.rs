@@ -87,9 +87,7 @@ pub struct RawSchema {
     pub required_version: Option<String>,
 
     #[serde(default)]
-    pub required_remerge_version: Option<String>,
-    #[serde(default)]
-    pub remerge_version: Option<String>,
+    pub remerge_features_used: Vec<String>,
 
     #[serde(default)]
     pub legacy: bool,
@@ -103,6 +101,10 @@ pub struct RawSchema {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RawFieldCommon<OptDefaultType: PartialEq + Default> {
     pub name: String,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub local_name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "is_default")]
@@ -258,6 +260,7 @@ macro_rules! common_getter {
 
 impl RawFieldType {
     common_getter!(name, &str);
+    common_getter!(local_name, &Option<String>);
     common_getter!(required, &bool);
     common_getter!(deprecated, &bool);
     common_getter!(composite_root, &Option<String>);
@@ -462,6 +465,15 @@ impl<'a> SchemaParser<'a> {
     pub fn parse(mut self) -> SchemaResult<RecordSchema> {
         let (version, required_version) = self.check_user_version()?;
 
+        let unknown_feat = self
+            .input
+            .remerge_features_used
+            .iter()
+            .find(|f| !REMERGE_FEATURES_UNDERSTOOD.contains(&f.as_str()));
+        if let Some(f) = unknown_feat {
+            return Err(SchemaError::MissingRemergeFeature(f.clone()));
+        }
+
         let mut own_guid_idx: Option<usize> = None;
         let mut updated_at_idx: Option<usize> = None;
 
@@ -495,9 +507,12 @@ impl<'a> SchemaParser<'a> {
 
         let (dedupe_on, composite_roots, composite_fields) = self.get_index_vecs();
 
+        self.check_used_features(&self.input.remerge_features_used)?;
+
         Ok(RecordSchema {
             version,
             required_version,
+            remerge_features_used: self.input.remerge_features_used.clone(),
             legacy: is_legacy,
             fields: self.parsed_fields,
             dedupe_on,
@@ -572,8 +587,8 @@ impl<'a> SchemaParser<'a> {
 
     fn parse_field(&self, field: &RawFieldType) -> SchemaResult<Field> {
         let field_name = field.name();
-
-        self.check_field_name(field_name)?;
+        let local_name = field.local_name().clone();
+        self.check_field_name(field_name, &local_name)?;
 
         self.check_type_restrictions(field).named(field_name)?;
 
@@ -616,9 +631,10 @@ impl<'a> SchemaParser<'a> {
         );
 
         let composite = self.get_composite_info(field);
-
+        let name = field_name.to_string();
         let f = Field {
-            name: field_name.into(),
+            local_name: local_name.unwrap_or_else(|| name.clone()),
+            name,
             deprecated,
             required,
             ty: result_field_type,
@@ -651,11 +667,11 @@ impl<'a> SchemaParser<'a> {
         }
     }
 
-    fn check_field_name(&self, field_name: &str) -> SchemaResult<()> {
+    fn check_field_name(&self, field_name: &str, local_name: &Option<String>) -> SchemaResult<()> {
         ensure!(
             self.parsed_fields
                 .iter()
-                .find(|f| f.name == field_name)
+                .find(|f| f.name == field_name || f.local_name == field_name)
                 .is_none(),
             SchemaError::DuplicateField(field_name.into())
         );
@@ -663,6 +679,19 @@ impl<'a> SchemaParser<'a> {
             is_valid_field_ident(field_name),
             FieldError::InvalidName.named(field_name)
         );
+        if let Some(n) = local_name {
+            ensure!(
+                self.parsed_fields
+                    .iter()
+                    .find(|f| &f.name == n || &f.local_name == n)
+                    .is_none(),
+                SchemaError::DuplicateField(n.into())
+            );
+            ensure!(
+                is_valid_field_ident(n),
+                FieldError::InvalidName.named(field_name)
+            );
+        }
         Ok(())
     }
 
@@ -722,6 +751,29 @@ impl<'a> SchemaParser<'a> {
 
             Some(other) => {
                 throw!(FieldError::CompositeRootInvalidMergeStrat(other));
+            }
+        }
+        Ok(())
+    }
+
+    fn check_used_features(&self, declared_features: &[String]) -> SchemaResult<()> {
+        for f in &self.parsed_fields {
+            match &f.ty {
+                FieldType::UntypedMap { .. } => {
+                    if !declared_features.contains(&"untyped_map".to_string()) {
+                        return Err(SchemaError::UndeclaredFeatureRequired(
+                            "untyped_map".to_string(),
+                        ));
+                    }
+                }
+                FieldType::RecordSet { .. } => {
+                    if !declared_features.contains(&"record_set".to_string()) {
+                        return Err(SchemaError::UndeclaredFeatureRequired(
+                            "record_set".to_string(),
+                        ));
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())
