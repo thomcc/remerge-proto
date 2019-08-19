@@ -16,8 +16,8 @@ use url::Url;
 
 pub const FORMAT_VERSION: usize = 1;
 
-pub fn parse_from_string(json: &str, is_remote: bool) -> Result<RecordSchema, SchemaError> {
-    let json_schema = match serde_yaml::from_str::<JsonSchema>(json) {
+pub fn parse_from_string(yaml: &str, is_remote: bool) -> Result<RecordSchema, SchemaError> {
+    let schema = match serde_yaml::from_str::<RawSchema>(yaml) {
         Ok(schema) => schema,
         Err(e) => {
             // If it's local then this is just a format error.
@@ -28,7 +28,7 @@ pub fn parse_from_string(json: &str, is_remote: bool) -> Result<RecordSchema, Sc
             }
             // If it's remote, then it failed, but it could have failed because
             // it's from a future version. Check that.
-            let version = match serde_yaml::from_str::<JustFormatVersion>(json) {
+            let version = match serde_yaml::from_str::<JustFormatVersion>(yaml) {
                 Ok(s) => s.format_version,
                 Err(_) => {
                     // Ditto with moving `e` (which we want to use because it can give
@@ -44,7 +44,7 @@ pub fn parse_from_string(json: &str, is_remote: bool) -> Result<RecordSchema, Sc
             return Err(SchemaError::FormatError(e));
         }
     };
-    let parser = SchemaParser::new(&json_schema, false);
+    let parser = SchemaParser::new(&schema, false);
     Ok(parser.parse()?)
 }
 
@@ -79,7 +79,7 @@ struct JustFormatVersion {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct JsonSchema {
+pub struct RawSchema {
     /// The version of the schema
     pub version: String,
 
@@ -94,14 +94,14 @@ pub struct JsonSchema {
     #[serde(default)]
     pub legacy: bool,
 
-    pub fields: Vec<JsonFieldType>,
+    pub fields: Vec<RawFieldType>,
 
     #[serde(default)]
     pub dedupe_on: Vec<String>,
 }
 // OptDefaultType not just being the type and made into an Option here is for serde's benefit.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct JsonFieldCommon<OptDefaultType: PartialEq + Default> {
+pub struct RawFieldCommon<OptDefaultType: PartialEq + Default> {
     pub name: String,
 
     #[serde(default)]
@@ -131,24 +131,24 @@ pub struct JsonFieldCommon<OptDefaultType: PartialEq + Default> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum JsonFieldType {
+pub enum RawFieldType {
     #[serde(rename = "untyped")]
     Untyped {
         #[serde(flatten)]
         // XXX does using JsonValue here still work now that we use yaml?
-        common: JsonFieldCommon<Option<JsonValue>>,
+        common: RawFieldCommon<Option<JsonValue>>,
     },
 
     #[serde(rename = "text")]
     Text {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<String>>,
+        common: RawFieldCommon<Option<String>>,
     },
 
     #[serde(rename = "url")]
     Url {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<String>>, // XXX: Option<Url>...
+        common: RawFieldCommon<Option<String>>, // XXX: Option<Url>...
         #[serde(default)]
         is_origin: bool,
     },
@@ -156,13 +156,13 @@ pub enum JsonFieldType {
     #[serde(rename = "boolean")]
     Boolean {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<bool>>,
+        common: RawFieldCommon<Option<bool>>,
     },
 
     #[serde(rename = "number")]
     Number {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<f64>>,
+        common: RawFieldCommon<Option<f64>>,
 
         #[serde(default)]
         #[serde(skip_serializing_if = "is_default")]
@@ -180,7 +180,7 @@ pub enum JsonFieldType {
     #[serde(rename = "integer")]
     Integer {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<i64>>,
+        common: RawFieldCommon<Option<i64>>,
 
         #[serde(default)]
         #[serde(skip_serializing_if = "is_default")]
@@ -198,18 +198,18 @@ pub enum JsonFieldType {
     #[serde(rename = "timestamp")]
     Timestamp {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<JsonTimeDefault>>,
+        common: RawFieldCommon<Option<RawTimeDefault>>,
 
         #[serde(default)]
         #[serde(skip_serializing_if = "is_default")]
-        semantic: Option<JsonTimestampSemantic>,
+        semantic: Option<RawTimestampSemantic>,
     },
 
     #[serde(rename = "own_guid")]
     OwnGuid {
         #[serde(flatten)]
         // TODO: check that serde does what I want with the `()` field.
-        common: JsonFieldCommon<()>,
+        common: RawFieldCommon<()>,
         #[serde(default)]
         #[serde(skip_serializing_if = "is_default")]
         auto: Option<bool>,
@@ -218,7 +218,7 @@ pub enum JsonFieldType {
     #[serde(rename = "untyped_map")]
     UntypedMap {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<JsonObject>>,
+        common: RawFieldCommon<Option<JsonObject>>,
 
         #[serde(default)]
         prefer_deletions: bool,
@@ -227,7 +227,7 @@ pub enum JsonFieldType {
     #[serde(rename = "record_set")]
     RecordSet {
         #[serde(flatten)]
-        common: JsonFieldCommon<Option<Vec<JsonObject>>>,
+        common: RawFieldCommon<Option<Vec<JsonObject>>>,
 
         // Note: required!
         id_key: String,
@@ -241,22 +241,22 @@ macro_rules! common_getter {
     ($name:ident, $T:ty) => {
         pub fn $name(&self) -> $T {
             match self {
-                JsonFieldType::Untyped { common, .. } => &common.$name,
-                JsonFieldType::Text { common, .. } => &common.$name,
-                JsonFieldType::Url { common, .. } => &common.$name,
-                JsonFieldType::Boolean { common, .. } => &common.$name,
-                JsonFieldType::Number { common, .. } => &common.$name,
-                JsonFieldType::Integer { common, .. } => &common.$name,
-                JsonFieldType::Timestamp { common, .. } => &common.$name,
-                JsonFieldType::OwnGuid { common, .. } => &common.$name,
-                JsonFieldType::RecordSet { common, .. } => &common.$name,
-                JsonFieldType::UntypedMap { common, .. } => &common.$name,
+                RawFieldType::Untyped { common, .. } => &common.$name,
+                RawFieldType::Text { common, .. } => &common.$name,
+                RawFieldType::Url { common, .. } => &common.$name,
+                RawFieldType::Boolean { common, .. } => &common.$name,
+                RawFieldType::Number { common, .. } => &common.$name,
+                RawFieldType::Integer { common, .. } => &common.$name,
+                RawFieldType::Timestamp { common, .. } => &common.$name,
+                RawFieldType::OwnGuid { common, .. } => &common.$name,
+                RawFieldType::RecordSet { common, .. } => &common.$name,
+                RawFieldType::UntypedMap { common, .. } => &common.$name,
             }
         }
     };
 }
 
-impl JsonFieldType {
+impl RawFieldType {
     common_getter!(name, &str);
     common_getter!(required, &bool);
     common_getter!(deprecated, &bool);
@@ -266,27 +266,27 @@ impl JsonFieldType {
 
     pub fn kind(&self) -> FieldKind {
         match self {
-            JsonFieldType::Untyped { .. } => FieldKind::Untyped,
-            JsonFieldType::Text { .. } => FieldKind::Text,
-            JsonFieldType::Url { .. } => FieldKind::Url,
-            JsonFieldType::Number { .. } => FieldKind::Number,
-            JsonFieldType::Integer { .. } => FieldKind::Integer,
-            JsonFieldType::Timestamp { .. } => FieldKind::Timestamp,
-            JsonFieldType::Boolean { .. } => FieldKind::Boolean,
-            JsonFieldType::OwnGuid { .. } => FieldKind::OwnGuid,
-            JsonFieldType::UntypedMap { .. } => FieldKind::UntypedMap,
-            JsonFieldType::RecordSet { .. } => FieldKind::RecordSet,
+            RawFieldType::Untyped { .. } => FieldKind::Untyped,
+            RawFieldType::Text { .. } => FieldKind::Text,
+            RawFieldType::Url { .. } => FieldKind::Url,
+            RawFieldType::Number { .. } => FieldKind::Number,
+            RawFieldType::Integer { .. } => FieldKind::Integer,
+            RawFieldType::Timestamp { .. } => FieldKind::Timestamp,
+            RawFieldType::Boolean { .. } => FieldKind::Boolean,
+            RawFieldType::OwnGuid { .. } => FieldKind::OwnGuid,
+            RawFieldType::UntypedMap { .. } => FieldKind::UntypedMap,
+            RawFieldType::RecordSet { .. } => FieldKind::RecordSet,
         }
     }
 
     pub fn get_merge(&self) -> Option<ParsedMerge> {
         self.merge().or_else(|| match self {
-            JsonFieldType::Timestamp {
-                semantic: Some(JsonTimestampSemantic::CreatedAt),
+            RawFieldType::Timestamp {
+                semantic: Some(RawTimestampSemantic::CreatedAt),
                 ..
             } => Some(ParsedMerge::TakeMin),
-            JsonFieldType::Timestamp {
-                semantic: Some(JsonTimestampSemantic::UpdatedAt),
+            RawFieldType::Timestamp {
+                semantic: Some(RawTimestampSemantic::UpdatedAt),
                 ..
             } => Some(ParsedMerge::TakeMax),
             _ => None,
@@ -295,36 +295,36 @@ impl JsonFieldType {
 
     pub fn has_default(&self) -> bool {
         match self {
-            JsonFieldType::Untyped { common, .. } => common.default.is_some(),
-            JsonFieldType::Text { common, .. } => common.default.is_some(),
-            JsonFieldType::Url { common, .. } => common.default.is_some(),
-            JsonFieldType::Boolean { common, .. } => common.default.is_some(),
-            JsonFieldType::Number { common, .. } => common.default.is_some(),
-            JsonFieldType::Integer { common, .. } => common.default.is_some(),
-            JsonFieldType::Timestamp { common, .. } => common.default.is_some(),
-            JsonFieldType::OwnGuid { .. } => false,
-            JsonFieldType::RecordSet { common, .. } => common.default.is_some(),
-            JsonFieldType::UntypedMap { common, .. } => common.default.is_some(),
+            RawFieldType::Untyped { common, .. } => common.default.is_some(),
+            RawFieldType::Text { common, .. } => common.default.is_some(),
+            RawFieldType::Url { common, .. } => common.default.is_some(),
+            RawFieldType::Boolean { common, .. } => common.default.is_some(),
+            RawFieldType::Number { common, .. } => common.default.is_some(),
+            RawFieldType::Integer { common, .. } => common.default.is_some(),
+            RawFieldType::Timestamp { common, .. } => common.default.is_some(),
+            RawFieldType::OwnGuid { .. } => false,
+            RawFieldType::RecordSet { common, .. } => common.default.is_some(),
+            RawFieldType::UntypedMap { common, .. } => common.default.is_some(),
         }
     }
 }
 
-/// This (and JsonSpecialTime) are basically the same as TimestampDefault, just done
+/// This (and RawSpecialTime) are basically the same as TimestampDefault, just done
 /// in such a way to make serde deserialize things the way we want for us.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum JsonTimeDefault {
+pub enum RawTimeDefault {
     Num(i64),
-    Special(JsonSpecialTime),
+    Special(RawSpecialTime),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum JsonSpecialTime {
+pub enum RawSpecialTime {
     #[serde(rename = "now")]
     Now,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum JsonTimestampSemantic {
+pub enum RawTimestampSemantic {
     #[serde(rename = "created_at")]
     CreatedAt,
 
@@ -335,20 +335,20 @@ pub enum JsonTimestampSemantic {
     Unknown,
 }
 
-impl JsonTimestampSemantic {
+impl RawTimestampSemantic {
     pub fn into_semantic(self) -> Option<TimestampSemantic> {
         match self {
-            JsonTimestampSemantic::CreatedAt => Some(TimestampSemantic::CreatedAt),
-            JsonTimestampSemantic::UpdatedAt => Some(TimestampSemantic::UpdatedAt),
-            JsonTimestampSemantic::Unknown => None,
+            RawTimestampSemantic::CreatedAt => Some(TimestampSemantic::CreatedAt),
+            RawTimestampSemantic::UpdatedAt => Some(TimestampSemantic::UpdatedAt),
+            RawTimestampSemantic::Unknown => None,
         }
     }
 }
 struct SchemaParser<'a> {
-    input: &'a JsonSchema,
+    input: &'a RawSchema,
     #[allow(dead_code)] // XXX USE ME
     is_remote: bool,
-    input_fields: HashMap<String, &'a JsonFieldType>,
+    input_fields: HashMap<String, &'a RawFieldType>,
 
     parsed_fields: Vec<Field>,
     dedupe_ons: HashSet<String>,
@@ -400,7 +400,7 @@ fn compatible_version_req(v: &semver::Version) -> semver::VersionReq {
 }
 
 impl<'a> SchemaParser<'a> {
-    pub fn new(repr: &'a JsonSchema, is_remote: bool) -> Self {
+    pub fn new(repr: &'a RawSchema, is_remote: bool) -> Self {
         let composite_roots = repr
             .fields
             .iter()
@@ -570,7 +570,7 @@ impl<'a> SchemaParser<'a> {
         Ok(())
     }
 
-    fn parse_field(&self, field: &JsonFieldType) -> SchemaResult<Field> {
+    fn parse_field(&self, field: &RawFieldType) -> SchemaResult<Field> {
         let field_name = field.name();
 
         self.check_field_name(field_name)?;
@@ -630,7 +630,7 @@ impl<'a> SchemaParser<'a> {
     }
 
     // Note: Asserts if anything is wrong, caller is expected to check all that first.
-    fn get_composite_info(&self, field: &JsonFieldType) -> Option<CompositeInfo> {
+    fn get_composite_info(&self, field: &RawFieldType) -> Option<CompositeInfo> {
         let field_name = field.name();
         if self.is_composite_root(field_name) {
             let children = self
@@ -666,7 +666,7 @@ impl<'a> SchemaParser<'a> {
         Ok(())
     }
 
-    fn check_type_restrictions(&self, field: &JsonFieldType) -> Result<(), FieldError> {
+    fn check_type_restrictions(&self, field: &RawFieldType) -> Result<(), FieldError> {
         let name = field.name();
         let kind = field.kind();
         let restriction = TypeRestriction::for_kind(kind);
@@ -685,7 +685,7 @@ impl<'a> SchemaParser<'a> {
 
     fn check_composite_member_field(
         &self,
-        field: &JsonFieldType,
+        field: &RawFieldType,
         merge: Option<ParsedMerge>,
     ) -> Result<(), FieldError> {
         let root = field
@@ -702,7 +702,7 @@ impl<'a> SchemaParser<'a> {
 
     fn check_composite_root_field(
         &self,
-        field: &JsonFieldType,
+        field: &RawFieldType,
         merge: Option<ParsedMerge>,
     ) -> Result<(), FieldError> {
         let field_name = field.name();
@@ -727,7 +727,7 @@ impl<'a> SchemaParser<'a> {
         Ok(())
     }
 
-    fn get_field_type(&self, merge: ParsedMerge, field: &JsonFieldType) -> SchemaResult<FieldType> {
+    fn get_field_type(&self, merge: ParsedMerge, field: &RawFieldType) -> SchemaResult<FieldType> {
         let field_name = field.name();
         let bad_merge = || {
             FieldError::IllegalMergeForType {
@@ -737,28 +737,28 @@ impl<'a> SchemaParser<'a> {
             .named(field_name)
         };
         Ok(match field {
-            JsonFieldType::Untyped { common } => {
+            RawFieldType::Untyped { common } => {
                 let merge = merge.to_untyped_merge(field).ok_or_else(bad_merge)?;
                 FieldType::Untyped {
                     merge,
                     default: common.default.clone(),
                 }
             }
-            JsonFieldType::Boolean { common } => {
+            RawFieldType::Boolean { common } => {
                 let merge = merge.to_boolean_merge(field).ok_or_else(bad_merge)?;
                 FieldType::Boolean {
                     merge,
                     default: common.default,
                 }
             }
-            JsonFieldType::Text { common } => {
+            RawFieldType::Text { common } => {
                 let merge = merge.to_text_merge(field).ok_or_else(bad_merge)?;
                 FieldType::Text {
                     merge,
                     default: common.default.clone(),
                 }
             }
-            JsonFieldType::Url { common, is_origin } => {
+            RawFieldType::Url { common, is_origin } => {
                 let merge = merge.to_text_merge(field).ok_or_else(bad_merge)?;
                 let default = if let Some(url) = &common.default {
                     let u = Url::parse(url)
@@ -777,7 +777,7 @@ impl<'a> SchemaParser<'a> {
                     is_origin: *is_origin,
                 }
             }
-            JsonFieldType::Number {
+            RawFieldType::Number {
                 common,
                 min,
                 max,
@@ -794,7 +794,7 @@ impl<'a> SchemaParser<'a> {
                     default: common.default,
                 }
             }
-            JsonFieldType::Integer {
+            RawFieldType::Integer {
                 common,
                 min,
                 max,
@@ -811,22 +811,22 @@ impl<'a> SchemaParser<'a> {
                     default: common.default,
                 }
             }
-            JsonFieldType::Timestamp { common, semantic } => {
+            RawFieldType::Timestamp { common, semantic } => {
                 let merge = merge.to_timestamp_merge(field).ok_or_else(bad_merge)?;
                 self.get_timestamp_field(merge, common, *semantic)
                     .named(field_name)?
             }
-            JsonFieldType::OwnGuid { auto, .. } => FieldType::OwnGuid {
+            RawFieldType::OwnGuid { auto, .. } => FieldType::OwnGuid {
                 auto: auto.unwrap_or(true),
             },
-            JsonFieldType::UntypedMap {
+            RawFieldType::UntypedMap {
                 common,
                 prefer_deletions,
             } => FieldType::UntypedMap {
                 prefer_deletions: *prefer_deletions,
                 default: common.default.clone(),
             },
-            JsonFieldType::RecordSet {
+            RawFieldType::RecordSet {
                 common,
                 id_key,
                 prefer_deletions,
@@ -839,8 +839,8 @@ impl<'a> SchemaParser<'a> {
     fn get_timestamp_field(
         &self,
         merge: TimestampMerge,
-        common: &JsonFieldCommon<Option<JsonTimeDefault>>,
-        semantic: Option<JsonTimestampSemantic>,
+        common: &RawFieldCommon<Option<RawTimeDefault>>,
+        semantic: Option<RawTimestampSemantic>,
     ) -> Result<FieldType, FieldError> {
         let semantic = if let Some(sem) = semantic.and_then(|ts| ts.into_semantic()) {
             let want = sem.required_merge();
@@ -857,8 +857,8 @@ impl<'a> SchemaParser<'a> {
             None
         };
         let tsd: Option<TimestampDefault> = common.default.map(|d| match d {
-            JsonTimeDefault::Num(v) => TimestampDefault::Value(v),
-            JsonTimeDefault::Special(JsonSpecialTime::Now) => TimestampDefault::Now,
+            RawTimeDefault::Num(v) => TimestampDefault::Value(v),
+            RawTimeDefault::Special(RawSpecialTime::Now) => TimestampDefault::Now,
         });
 
         if let Some(TimestampDefault::Value(default)) = tsd {
@@ -880,7 +880,7 @@ impl<'a> SchemaParser<'a> {
 
     fn get_record_set_field(
         &self,
-        common: &JsonFieldCommon<Option<Vec<JsonObject>>>,
+        common: &RawFieldCommon<Option<Vec<JsonObject>>>,
         id_key: &str,
         prefer_deletions: bool,
     ) -> Result<FieldType, FieldError> {
@@ -916,11 +916,11 @@ impl<'a> SchemaParser<'a> {
 
     fn check_number_bounds<T: Copy + PartialOrd + BoundedNum>(
         &self,
-        field: &JsonFieldType,
+        field: &RawFieldType,
         min: &Option<T>,
         max: &Option<T>,
         if_oob: Option<IfOutOfBounds>,
-        default: &Option<T>, // f: &JsonFieldType
+        default: &Option<T>, // f: &RawFieldType
     ) -> Result<(), FieldError> {
         ensure!(
             min.map_or(true, |v| v.sane_value()),
@@ -956,11 +956,9 @@ impl<'a> SchemaParser<'a> {
 }
 
 // way to avoid having to duplicate the f64 bound handing stuff for i64
-trait BoundedNum {
+trait BoundedNum: Sized {
     fn sane_value(self) -> bool;
-    fn min_max_defaults() -> (Self, Self)
-    where
-        Self: Sized;
+    fn min_max_defaults() -> (Self, Self);
 }
 
 impl BoundedNum for f64 {
@@ -1073,7 +1071,7 @@ impl std::fmt::Display for ParsedMerge {
 }
 
 impl ParsedMerge {
-    fn to_untyped_merge(self, f: &JsonFieldType) -> Option<UntypedMerge> {
+    fn to_untyped_merge(self, f: &RawFieldType) -> Option<UntypedMerge> {
         if f.composite_root().is_some() {
             return Some(UntypedMerge::CompositeMember);
         }
@@ -1085,11 +1083,11 @@ impl ParsedMerge {
         }
     }
 
-    fn to_text_merge(self, f: &JsonFieldType) -> Option<TextMerge> {
+    fn to_text_merge(self, f: &RawFieldType) -> Option<TextMerge> {
         Some(TextMerge::Untyped(self.to_untyped_merge(f)?))
     }
 
-    fn to_number_merge(self, f: &JsonFieldType) -> Option<NumberMerge> {
+    fn to_number_merge(self, f: &RawFieldType) -> Option<NumberMerge> {
         if let Some(u) = self.to_untyped_merge(f) {
             Some(NumberMerge::Untyped(u))
         } else {
@@ -1102,7 +1100,7 @@ impl ParsedMerge {
         }
     }
 
-    fn to_timestamp_merge(self, f: &JsonFieldType) -> Option<TimestampMerge> {
+    fn to_timestamp_merge(self, f: &RawFieldType) -> Option<TimestampMerge> {
         if let Some(u) = self.to_untyped_merge(f) {
             Some(TimestampMerge::Untyped(u))
         } else {
@@ -1114,7 +1112,7 @@ impl ParsedMerge {
         }
     }
 
-    fn to_boolean_merge(self, f: &JsonFieldType) -> Option<BooleanMerge> {
+    fn to_boolean_merge(self, f: &RawFieldType) -> Option<BooleanMerge> {
         if let Some(u) = self.to_untyped_merge(f) {
             Some(BooleanMerge::Untyped(u))
         } else {
